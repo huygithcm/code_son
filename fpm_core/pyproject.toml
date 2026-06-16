@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=64", "pybind11>=2.10"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fpm"
+version = "0.1.0"
+description = "Fastest Image Pattern Matching — pure C++ core for Python (Windows)"
+requires-python = ">=3.8"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+test = ["pillow"]

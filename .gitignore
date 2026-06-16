@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtual environment
+fpm_core/.venv/
+.venv/
+
+# Build / packaging artifacts (regenerable from source + bundled binaries)
+fpm_core/packaging/build/
+fpm_core/packaging/dist/
+build/
+dist/
+
+# Runtime / generated data
+fpm_core/templates/
+fpm_core/templates_demo/
+fpm_core/out/
+fpm_core/out_real/
+fpm_core/m12_result.png
+
+# OS
+Thumbs.db
+.DS_Store
