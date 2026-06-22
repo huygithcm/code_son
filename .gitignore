@@ -20,6 +20,14 @@ fpm_core/templates_demo/
 fpm_core/out/
 fpm_core/out_real/
 fpm_core/m12_result.png
+fpm_core/board_check_result.png
+
+# AOI / stream generated output (regenerable)
+seg_out/
+stream_out/
+mindvision_python/snap_*.jpg
+mindvision_python/snapshot.jpg
+mindvision_python/run.log
 
 # OS
 Thumbs.db

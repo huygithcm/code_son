@@ -1,0 +1,50 @@
+{
+  "cap1": {
+    "score": 0.7,
+    "angle": 10,
+    "max_pos": 2,
+    "max_overlap": 0.3,
+    "enabled": true,
+    "expected": 1
+  },
+  "cap2": {
+    "score": 0.7,
+    "angle": 10,
+    "max_pos": 2,
+    "max_overlap": 0.3,
+    "enabled": true,
+    "expected": 1
+  },
+  "diode": {
+    "score": 0.7,
+    "angle": 10,
+    "max_pos": 2,
+    "max_overlap": 0.3,
+    "enabled": true,
+    "expected": 1
+  },
+  "inductor": {
+    "score": 0.7,
+    "angle": 10,
+    "max_pos": 2,
+    "max_overlap": 0.3,
+    "enabled": true,
+    "expected": 1
+  },
+  "lm2596": {
+    "score": 0.7,
+    "angle": 10,
+    "max_pos": 2,
+    "max_overlap": 0.3,
+    "enabled": true,
+    "expected": 1
+  },
+  "pot": {
+    "score": 0.45,
+    "angle": 180,
+    "max_pos": 2,
+    "max_overlap": 0.3,
+    "enabled": true,
+    "expected": 1
+  }
+}

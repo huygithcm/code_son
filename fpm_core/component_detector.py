@@ -14,6 +14,7 @@ Library folder layout::
 """
 import json
 import os
+import sys
 
 import numpy as np
 from PIL import Image
@@ -22,6 +23,19 @@ from fpm_env import setup_fpm_dll_dirs
 
 setup_fpm_dll_dirs()
 import fpm  # noqa: E402
+
+# Tien xu ly (preprocess.py o thu muc goc du an) -> detect chinh xac hon.
+try:
+    from preprocess import preprocess
+except ImportError:
+    _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _ROOT not in sys.path:
+        sys.path.insert(0, _ROOT)
+    try:
+        from preprocess import preprocess
+    except ImportError:
+        def preprocess(gray):   # fallback: khong tien xu ly
+            return gray
 
 IMG_EXTS = (".bmp", ".png", ".jpg", ".jpeg", ".tif", ".tiff")
 CONFIG_NAME = "components.json"
@@ -43,8 +57,9 @@ def to_gray(img):
 class Component:
     def __init__(self, name, gray, cfg):
         self.name = name
-        self.gray = gray
-        self.h, self.w = gray.shape[:2]
+        # template duoc tien xu ly truoc khi learn (phai dong nhat voi frame luc detect)
+        self.gray = preprocess(gray)
+        self.h, self.w = self.gray.shape[:2]
         self.cfg = dict(DEFAULTS, **(cfg or {}))
         self.matcher = fpm.FastMatch()
         self._learn()
@@ -54,7 +69,9 @@ class Component:
         p.tolerance_angle = float(self.cfg["angle"])
         self.matcher.learn(self.gray, p)
 
-    def detect(self, frame_gray):
+    def detect(self, frame_gray, _pp=True):
+        if _pp:
+            frame_gray = preprocess(frame_gray)
         p = fpm.MatchParams()
         p.score = float(self.cfg["score"])
         p.max_pos = int(self.cfg["max_pos"])
@@ -123,10 +140,11 @@ class ComponentLibrary:
     # ---- detection ----
     def detect(self, frame_gray):
         """Run all enabled components against a frame. Returns flat list of dicts."""
+        frame_pp = preprocess(frame_gray)   # tien xu ly 1 lan cho ca thu vien
         results = []
         for c in self.components.values():
             if c.cfg.get("enabled", True):
-                results.extend(c.detect(frame_gray))
+                results.extend(c.detect(frame_pp, _pp=False))
         return results
 
     def expected_counts(self):

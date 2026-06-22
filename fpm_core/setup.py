@@ -20,8 +20,16 @@ OPENCV_ROOT = os.environ.get(
     "FPM_OPENCV_ROOT",
     os.path.join(ROOT, "build", "vcpkg_installed", "x64-windows"),
 )
-OPENCV_INC = os.path.join(OPENCV_ROOT, "include")
 OPENCV_LIB = os.path.join(OPENCV_ROOT, "lib")
+
+# OpenCV headers may live in <root>/include (older layout) or
+# <root>/include/opencv4 (current vcpkg layout). Pick whichever has opencv2/.
+_INC_BASE = os.path.join(OPENCV_ROOT, "include")
+_INC_OPENCV4 = os.path.join(_INC_BASE, "opencv4")
+if os.path.isdir(os.path.join(_INC_OPENCV4, "opencv2")):
+    OPENCV_INC = _INC_OPENCV4
+else:
+    OPENCV_INC = _INC_BASE
 
 if not os.path.isdir(OPENCV_INC):
     sys.stderr.write(
@@ -52,6 +60,10 @@ setup(
     version="0.1.0",
     description="Fastest Image Pattern Matching — pure C++ core for Python (Windows)",
     ext_modules=ext_modules,
+    # Đây chỉ là 1 extension C++ (fpm), không có package Python nào để gom.
+    # Tắt auto-discovery để setuptools không nhầm packaging/ và opencv_bin/.
+    packages=[],
+    py_modules=[],
     cmdclass={"build_ext": build_ext},
     python_requires=">=3.8",
 )
