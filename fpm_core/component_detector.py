@@ -147,6 +147,16 @@ class ComponentLibrary:
                 results.extend(c.detect(frame_pp, _pp=False))
         return results
 
+    def detect_oriented(self, frame_gray):
+        """Detect tren ca 2 huong (0 va 180 do) -> chon huong khop hon.
+        Xu ly board gan doi xung vao khung lat nguoc. Tra ve (results, flipped)."""
+        import cv2
+        a = self.detect(frame_gray)
+        b = self.detect(cv2.rotate(frame_gray, cv2.ROTATE_180))
+        sa = sum(r["score"] for r in a)
+        sb = sum(r["score"] for r in b)
+        return (b, True) if sb > sa else (a, False)
+
     def expected_counts(self):
         """Per-component expected count (default 1) for pass/fail, from config."""
         return {name: int(c.cfg.get("expected", 1)) for name, c in self.components.items()}

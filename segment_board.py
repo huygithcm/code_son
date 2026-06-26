@@ -25,14 +25,30 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, "seg_out")
 
 
-def board_mask(bgr):
-    """Tra ve mask nhi phan vung board + phuong phap da dung."""
+# Nguong HSV tach board (chinh duoc tu HSV tuner). board PCB xanh duong.
+HSV_LO = [90, 60, 40]
+HSV_HI = [140, 255, 255]
+
+
+def set_hsv(lo, hi):
+    """Cap nhat nguong HSV tach board (tu HSV tuner)."""
+    global HSV_LO, HSV_HI
+    HSV_LO = [int(v) for v in lo]
+    HSV_HI = [int(v) for v in hi]
+
+
+def hsv_mask(bgr, lo=None, hi=None):
+    """Chi tra ve mask inRange theo HSV (cho HSV tuner xem truc tiep)."""
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
     blur = cv2.GaussianBlur(hsv, (5, 5), 0)
-    # board PCB xanh duong: Hue ~ 90-135, Sat kha cao
-    lo = np.array([90, 60, 40], np.uint8)
-    hi = np.array([140, 255, 255], np.uint8)
-    mask = cv2.inRange(blur, lo, hi)
+    lo = np.array(HSV_LO if lo is None else lo, np.uint8)
+    hi = np.array(HSV_HI if hi is None else hi, np.uint8)
+    return cv2.inRange(blur, lo, hi)
+
+
+def board_mask(bgr):
+    """Tra ve mask nhi phan vung board + phuong phap da dung."""
+    mask = hsv_mask(bgr)
 
     # close manh de noi cac mang xanh bi linh kien cat vun thanh ca module
     k_big = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))
@@ -62,18 +78,59 @@ def board_hull(mask):
     return cv2.convexHull(pts)
 
 
-def board_bbox(bgr, margin=0):
+def board_bbox(bgr, margin=0, scale=0.5):
     """Tra ve bounding box truc-toa-do (x,y,w,h) cua board, hoac None.
-    Dung cho auto-ROI trong detect_gui. margin: noi rong bbox (px)."""
-    mask, _ = board_mask(bgr)
-    cnt = board_hull(mask)
-    if cnt is None:
-        return None
-    x, y, w, h = cv2.boundingRect(cnt)
+    Dung cho auto-ROI. margin: noi rong bbox (px). scale<1: thu nho de chay nhanh."""
     H, W = bgr.shape[:2]
+    if scale and scale < 1.0:
+        small = cv2.resize(bgr, (int(W * scale), int(H * scale)), interpolation=cv2.INTER_AREA)
+        mask, _ = board_mask(small)
+        cnt = board_hull(mask)
+        if cnt is None:
+            return None
+        x, y, w, h = [int(v / scale) for v in cv2.boundingRect(cnt)]
+    else:
+        mask, _ = board_mask(bgr)
+        cnt = board_hull(mask)
+        if cnt is None:
+            return None
+        x, y, w, h = cv2.boundingRect(cnt)
     x0 = max(0, x - margin); y0 = max(0, y - margin)
     x1 = min(W, x + w + margin); y1 = min(H, y + h + margin)
     return (x0, y0, x1 - x0, y1 - y0)
+
+
+def board_rect(bgr, scale=0.5):
+    """minAreaRect cua board (toa do full-res), hoac None."""
+    H, W = bgr.shape[:2]
+    if scale and scale < 1.0:
+        small = cv2.resize(bgr, (int(W * scale), int(H * scale)), interpolation=cv2.INTER_AREA)
+        cnt = board_hull(board_mask(small)[0])
+        if cnt is None:
+            return None
+        (cx, cy), (w, h), a = cv2.minAreaRect((cnt.astype(np.float32) / scale).astype(np.int32))
+        return ((cx, cy), (w, h), a)
+    cnt = board_hull(board_mask(bgr)[0])
+    return cv2.minAreaRect(cnt) if cnt is not None else None
+
+
+# Kich thuoc board chuan (canonical) - teach va detect deu nan board ve kich thuoc nay
+CANON_W = 360
+CANON_H = 720
+
+
+def normalize_board(bgr, cw=CANON_W, ch=CANON_H, scale=0.5):
+    """Nan board ve khung chuan (cw x ch, portrait) -> bat bien vi tri/xoay/ti le.
+    Tra ve (gray_canon, bgr_canon) hoac None."""
+    rect = board_rect(bgr, scale)
+    if rect is None:
+        return None
+    crop = deskew_crop(bgr, rect)        # cat + xoay thang (kich thuoc thay doi)
+    if crop is None:
+        return None
+    canon = cv2.resize(crop, (cw, ch), interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(canon, cv2.COLOR_BGR2GRAY)
+    return gray, canon
 
 
 def deskew_crop(bgr, rect):

@@ -25,14 +25,16 @@ class Camera:
         self.mono = False
         self.flip = (platform.system() == "Windows")
 
-    def open(self):
+    def open(self, force_mono=False):
+        """force_mono=True: ISP xuat MONO8 (it du lieu hon -> FPS cao hon, ke ca
+        voi cam mau). Khi do khong co thong tin mau (HSV tach board se dung Otsu)."""
         devs = mvsdk.CameraEnumerateDevice()
         if not devs:
             raise RuntimeError("Khong tim thay camera MindVision nao!")
         info = devs[0]
         self.h = mvsdk.CameraInit(info, -1, -1)
         cap = mvsdk.CameraGetCapability(self.h)
-        self.mono = cap.sIspCapacity.bMonoSensor != 0
+        self.mono = (cap.sIspCapacity.bMonoSensor != 0) or force_mono
         mvsdk.CameraSetIspOutFormat(
             self.h, mvsdk.CAMERA_MEDIA_TYPE_MONO8 if self.mono else mvsdk.CAMERA_MEDIA_TYPE_BGR8)
         mvsdk.CameraSetTriggerMode(self.h, 0)
@@ -58,6 +60,11 @@ class Camera:
             rgb = np.repeat(frame, 3, axis=2)
             gray = frame[:, :, 0]
         return np.ascontiguousarray(gray), np.ascontiguousarray(rgb)
+
+    def reopen(self, force_mono):
+        """Dong va mo lai camera o che do mau/mono khac."""
+        self.close()
+        return self.open(force_mono=force_mono)
 
     def close(self):
         if self.h:

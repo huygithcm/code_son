@@ -9,9 +9,11 @@ Chay (venv co san fpm cua fpm_core):
 """
 import os
 import sys
+import time
 
+import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageTk
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -21,10 +23,13 @@ sys.path.insert(0, os.path.join(HERE, "fpm_core"))
 
 from camera_mv import Camera, mvsdk          # noqa: E402
 from component_detector import ComponentLibrary  # noqa: E402 (tu import fpm)
-from segment_board import board_bbox          # noqa: E402 (auto tach board)
+from segment_board import board_bbox, normalize_board  # noqa: E402 (auto tach board)
+from hsv_tuner import HSVTuner                # noqa: E402
 
 DEFAULT_LIB = os.path.join(HERE, "fpm_core", "templates_board")
-MAX_VIEW = (1000, 760)
+DISP_W = 900           # be rong hien thi (resize bang cv2 cho nhanh, it RAM)
+DETECT_EVERY = 3       # che do lien tuc: detect moi N frame
+LOOP_MS = 20           # nhip vong lap (~50fps toi da) -> khong chiem het CPU
 
 
 class DetectApp:
@@ -39,6 +44,8 @@ class DetectApp:
         self._disp_scale = 1.0
         self._drag = None
         self._roi_tmp = None
+        self.frame_i = 0
+        self._fps = 0.0
 
         root.title("Kiem tra linh kien - MindVision + fpm")
         root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -49,8 +56,16 @@ class DetectApp:
         self.btn.pack(side="left", padx=4, pady=4)
         self.btn_live = tk.Button(bar, text="Live", width=8, command=self.toggle_live)
         self.btn_live.pack(side="left", padx=4)
+        self.cont = tk.BooleanVar(value=False)
+        tk.Checkbutton(bar, text="Detect lien tuc", variable=self.cont).pack(side="left", padx=4)
+        self.normalize = tk.BooleanVar(value=True)
+        tk.Checkbutton(bar, text="Chuan hoa board", variable=self.normalize).pack(side="left", padx=4)
         tk.Button(bar, text="Auto board ROI", command=self.auto_roi).pack(side="left", padx=4)
+        tk.Button(bar, text="HSV tuner", command=self.open_hsv).pack(side="left", padx=4)
         tk.Button(bar, text="Clear ROI", command=self.clear_roi).pack(side="left", padx=4)
+        self.gray_fps = tk.BooleanVar(value=False)
+        tk.Checkbutton(bar, text="Gray (FPS cao)", variable=self.gray_fps,
+                       command=self.toggle_gray).pack(side="left", padx=4)
         tk.Button(bar, text="Reload library", command=self.reload_lib).pack(side="left", padx=4)
         tk.Button(bar, text="Library folder...", command=self.choose_lib).pack(side="left", padx=4)
         self.status = tk.Label(bar, text=""); self.status.pack(side="left", padx=8)
@@ -159,23 +174,49 @@ class DetectApp:
         if not self.live or self.cam.h is None:
             return
         try:
-            _, rgb = self.cam.grab()
-            self._show(Image.fromarray(rgb))
+            t0 = time.time()
+            gray, rgb = self.cam.grab()
+            items = None
+            disp = rgb
+            if self.cont.get() and self.lib and self.lib.components:
+                self.frame_i += 1
+                if self.frame_i % DETECT_EVERY == 0:
+                    det_gray, ox, oy, disp = self._prep(gray, rgb)
+                    dets, disp = self._detect_image(det_gray, disp)
+                    items = self._run_detect(dets, ox, oy)
+            elif self.normalize.get():
+                r = normalize_board(np.ascontiguousarray(rgb[:, :, ::-1]))
+                if r is not None:
+                    disp = np.ascontiguousarray(r[1][:, :, ::-1])
+            self._render(disp, items)
+            dt = time.time() - t0
+            self._fps = 0.9 * getattr(self, "_fps", 0.0) + 0.1 * (1.0 / dt if dt > 0 else 0)
+            base = self.status.cget("text").split("  |FPS")[0]
+            self.status.config(text=f"{base}  |FPS {self._fps:.1f}")
         except Exception:
             pass
-        self.root.after(33, self._tick)
+        self.root.after(LOOP_MS, self._tick)
 
-    def _show(self, pil_img):
-        w, h = pil_img.size
-        s = min(MAX_VIEW[0] / w, MAX_VIEW[1] / h, 1.0)
+    def _render(self, rgb, items=None):
+        """Resize bang cv2 (nhanh, it RAM) roi ve ket qua tren anh NHO."""
+        h, w = rgb.shape[:2]
+        s = min(DISP_W / w, 1.0)
         self._disp_scale = s
-        disp = pil_img.resize((int(w * s), int(h * s)))
-        self.tkimg = ImageTk.PhotoImage(disp)
-        self.canvas.config(width=disp.width, height=disp.height)
+        disp = cv2.resize(rgb, (int(w * s), int(h * s)), interpolation=cv2.INTER_AREA)
+        disp = np.ascontiguousarray(disp)
+        if items:
+            for name, score, corners, center in items:
+                pts = np.array([[int(px * s), int(py * s)] for px, py in corners], np.int32)
+                cv2.polylines(disp, [pts], True, (255, 0, 0), 2)
+                cv2.putText(disp, f"{name} {score:.2f}",
+                            (int(center[0] * s) + 4, int(center[1] * s) - 4),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+        self.tkimg = ImageTk.PhotoImage(Image.fromarray(disp))
+        self.canvas.config(width=disp.shape[1], height=disp.shape[0])
         self.canvas.delete("all")
         self.canvas.create_image(0, 0, anchor="nw", image=self.tkimg)
         if self.roi:
-            x0, y0, x1, y1 = [v * s for v in self.roi]
+            x0, y0, x1, y1 = [int(v * s) for v in self.roi]
             self.canvas.create_rectangle(x0, y0, x1, y1, outline="#00e5ff", width=2, dash=(6, 4))
 
     # ---------- ROI ----------
@@ -209,6 +250,35 @@ class DetectApp:
         self._roi_tmp = None
         self.status.config(text="ROI: toan anh")
 
+    def toggle_gray(self):
+        """Chuyen camera sang MONO8 (FPS cao hon) hoac ve mau."""
+        if self.cam.h is None:
+            return
+        was_live = self.live
+        self.stop_live()
+        try:
+            self.cam.reopen(force_mono=self.gray_fps.get())
+        except Exception as e:
+            messagebox.showerror("Camera", str(e)); return
+        self.status.config(text=("Mode: GRAY/MONO (FPS cao)" if self.gray_fps.get()
+                                 else "Mode: mau"))
+        if was_live:
+            self.start_live()
+
+    def open_hsv(self):
+        """Mo HSV tuner tren 1 frame mau de chinh nguong tach board."""
+        if self.cam.h is None:
+            return
+        if self.cam.mono:
+            messagebox.showinfo("HSV tuner", "Dang o che do GRAY/MONO -> khong co mau. "
+                                "Tat 'Gray (FPS cao)' de chinh HSV."); return
+        self.stop_live()
+        try:
+            _, rgb = self.cam.grab()
+        except mvsdk.CameraException as e:
+            messagebox.showerror("Grab", e.message); return
+        HSVTuner(self.root, np.ascontiguousarray(rgb[:, :, ::-1]))
+
     def auto_roi(self):
         """Tu dong tach board (OpenCV) -> dat ROI quanh board."""
         if self.cam.h is None:
@@ -219,13 +289,13 @@ class DetectApp:
         except mvsdk.CameraException as e:
             messagebox.showerror("Grab", e.message); return
         bgr = np.ascontiguousarray(rgb[:, :, ::-1])
-        bb = board_bbox(bgr, margin=15)
+        bb = board_bbox(bgr, margin=45)   # margin rong de khong cat linh kien o mep board
         if bb is None:
             messagebox.showwarning("Auto ROI", "Khong tach duoc board."); return
         x, y, w, h = bb
         self.roi = (x, y, x + w, y + h)
         self.status.config(text=f"Auto board ROI = {self.roi}")
-        self._show(Image.fromarray(rgb))
+        self._render(rgb)
 
     # ---------- library ----------
     def choose_lib(self):
@@ -251,42 +321,45 @@ class DetectApp:
             messagebox.showerror("Library", str(e))
 
     # ---------- detect ----------
-    def detect(self):
-        if self.cam.h is None:
-            messagebox.showerror("Camera", "Camera chua mo."); return
-        if not self.lib or not self.lib.components:
-            messagebox.showwarning("Library", "Chua co template. Tao bang teach_board.py."); return
-        self.stop_live()
-        try:
-            gray, rgb = self.cam.grab()
-        except mvsdk.CameraException as e:
-            messagebox.showerror("Grab", e.message); return
-
-        # gioi han vung detect theo ROI (neu co)
+    def _prep(self, gray, rgb):
+        """Chuan bi anh de detect + anh de hien thi.
+        - Chuan hoa board: nan board ve canonical -> det tren canonical, hien canonical.
+        - Khong: cat theo ROI (neu co), hien anh goc."""
+        if self.normalize.get():
+            r = normalize_board(np.ascontiguousarray(rgb[:, :, ::-1]))
+            if r is not None:
+                gray_c, bgr_c = r
+                return gray_c, 0, 0, np.ascontiguousarray(bgr_c[:, :, ::-1])
+            # khong tach duoc board -> fallback toan anh
+            return gray, 0, 0, rgb
         if self.roi:
             x0, y0, x1, y1 = self.roi
             x0 = max(0, x0); y0 = max(0, y0)
             x1 = min(gray.shape[1], x1); y1 = min(gray.shape[0], y1)
-            sub = gray[y0:y1, x0:x1]
-            ox, oy = x0, y0
-        else:
-            sub = gray; ox, oy = 0, 0
+            return gray[y0:y1, x0:x1], x0, y0, rgb
+        return gray, 0, 0, rgb
 
-        dets = self.lib.detect(sub)
+    def _detect_image(self, det_gray, disp):
+        """Detect (tu chon huong khi chuan hoa) -> (dets, disp da xoay neu can)."""
+        if self.normalize.get():
+            dets, flipped = self.lib.detect_oriented(det_gray)
+            if flipped:
+                disp = cv2.rotate(disp, cv2.ROTATE_180)
+            return dets, disp
+        return self.lib.detect(det_gray), disp
+
+    def _run_detect(self, dets, ox=0, oy=0):
+        """Cap nhat bang tu ket qua dets, tra ve items (toa do + offset) de ve."""
         expected = self.lib.expected_counts()
         counts = {n: 0 for n in self.lib.components}
         best = {n: 0.0 for n in self.lib.components}
-
-        vis = Image.fromarray(rgb).convert("RGB")
-        d = ImageDraw.Draw(vis)
+        items = []
         for r in dets:
             counts[r["name"]] += 1
             best[r["name"]] = max(best[r["name"]], r["score"])
-            c = [(p[0] + ox, p[1] + oy) for p in r["corners"]]
-            d.line([c[0], c[1], c[2], c[3], c[0]], fill=(255, 0, 0), width=4)
-            cx, cy = r["center"][0] + ox, r["center"][1] + oy
-            d.text((cx + 6, cy - 6), f'{r["name"]} {r["score"]:.2f}', fill=(255, 255, 0))
-        self._show(vis)
+            items.append((r["name"], r["score"],
+                          [(p[0] + ox, p[1] + oy) for p in r["corners"]],
+                          (r["center"][0] + ox, r["center"][1] + oy)))
 
         for i in self.tree.get_children():
             self.tree.delete(i)
@@ -301,6 +374,22 @@ class DetectApp:
                              tags=(("PASS" if ok else "FAIL"),))
         self.total.config(text=("TONG: PASS" if ok_all else "TONG: FAIL"),
                           fg=("#2e7d32" if ok_all else "#c62828"))
+        return items
+
+    def detect(self):
+        if self.cam.h is None:
+            messagebox.showerror("Camera", "Camera chua mo."); return
+        if not self.lib or not self.lib.components:
+            messagebox.showwarning("Library", "Chua co template. Tao bang teach_board.py."); return
+        self.stop_live()
+        try:
+            gray, rgb = self.cam.grab()
+        except mvsdk.CameraException as e:
+            messagebox.showerror("Grab", e.message); return
+        det_gray, ox, oy, disp = self._prep(gray, rgb)
+        dets, disp = self._detect_image(det_gray, disp)
+        items = self._run_detect(dets, ox, oy)
+        self._render(disp, items)
 
     def on_close(self):
         self.stop_live()

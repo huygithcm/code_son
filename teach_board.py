@@ -110,6 +110,8 @@ class TeachApp:
         bar = tk.Frame(root); bar.pack(fill="x")
         self.btn_live = tk.Button(bar, text="Live", width=8, command=self.toggle_live)
         self.btn_live.pack(side="left", padx=3, pady=3)
+        self.normalize = tk.BooleanVar(value=True)
+        tk.Checkbutton(bar, text="Chuan hoa board", variable=self.normalize).pack(side="left", padx=4)
         tk.Button(bar, text="Open image...", command=self.open_image).pack(side="left", padx=3)
         tk.Button(bar, text="Library folder...", command=self.choose_lib).pack(side="left", padx=3)
         tk.Button(bar, text="Delete selected", command=self.delete_selected).pack(side="left", padx=3)
@@ -173,8 +175,22 @@ class TeachApp:
             pass
         self.root.after(30, self._tick)
 
+    def _maybe_normalize(self, rgb):
+        """Neu bat 'Chuan hoa board': nan board ve khung chuan (canonical)."""
+        if not self.normalize.get():
+            return rgb
+        try:
+            import cv2
+            from segment_board import normalize_board
+            r = normalize_board(np.ascontiguousarray(rgb[:, :, ::-1]))
+            if r is not None:
+                return cv2.cvtColor(r[1], cv2.COLOR_BGR2RGB)
+        except Exception:
+            pass
+        return rgb
+
     def _show_array(self, rgb):
-        self.img = Image.fromarray(rgb).convert("RGB")
+        self.img = Image.fromarray(self._maybe_normalize(rgb)).convert("RGB")
         self._render()
 
     # ---------- data ----------
@@ -217,7 +233,8 @@ class TeachApp:
         if not path or not os.path.isfile(path):
             return
         self.stop_live()
-        self.img = Image.open(path).convert("RGB")
+        rgb = np.asarray(Image.open(path).convert("RGB"))
+        self.img = Image.fromarray(self._maybe_normalize(rgb)).convert("RGB")
         self._render()
 
     def open_image(self):

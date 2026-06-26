@@ -18,8 +18,9 @@ import csv
 import time
 import datetime as dt
 
+import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageTk
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -34,7 +35,8 @@ from segment_board import board_bbox             # noqa: E402
 DEFAULT_LIB = os.path.join(HERE, "fpm_core", "templates_board")
 FAIL_DIR = os.path.join(HERE, "stream_out", "fail")
 LOG_CSV = os.path.join(HERE, "stream_out", "log.csv")
-MAX_VIEW = (1000, 760)
+DISP_W = 900              # be rong hien thi (resize bang cv2 cho nhanh, it RAM)
+LOOP_MS = 15              # nhip vong lap (gioi han CPU)
 
 PRESENT_AREA = 0.010      # board chiem > 1% khung -> coi nhu CO board
 ABSENT_FRAMES = 6         # so frame vang lien tiep de chot board da roi khoi khung
@@ -68,6 +70,10 @@ class StreamApp:
                              bg="#2e7d32", fg="white", font=("Segoe UI", 11, "bold"))
         self.btn.pack(side="left", padx=4, pady=4)
         tk.Checkbutton(bar, text="Auto board ROI", variable=self.use_auto_roi).pack(side="left", padx=6)
+        self.gray_fps = tk.BooleanVar(value=False)
+        tk.Checkbutton(bar, text="Gray (FPS cao)", variable=self.gray_fps,
+                       command=self.toggle_gray).pack(side="left", padx=4)
+        tk.Button(bar, text="HSV tuner", command=self.open_hsv).pack(side="left", padx=4)
         tk.Button(bar, text="Reset counters", command=self.reset_counters).pack(side="left", padx=4)
         tk.Button(bar, text="Reload library", command=self.reload_lib).pack(side="left", padx=4)
         self.status = tk.Label(bar, text=""); self.status.pack(side="left", padx=8)
@@ -119,6 +125,35 @@ class StreamApp:
         self.n_pass = self.n_fail = 0
         self.counter.config(text="PASS 0 / FAIL 0")
 
+    def toggle_gray(self):
+        if self.cam.h is None:
+            return
+        was = self.running
+        self.running = False
+        try:
+            self.cam.reopen(force_mono=self.gray_fps.get())
+        except Exception as e:
+            messagebox.showerror("Camera", str(e)); return
+        if was:
+            self.running = True
+            self._tick()
+
+    def open_hsv(self):
+        if self.cam.h is None:
+            return
+        if self.cam.mono:
+            messagebox.showinfo("HSV tuner", "Dang GRAY/MONO -> khong co mau. Tat 'Gray (FPS cao)'.")
+            return
+        run = self.running; self.running = False
+        try:
+            _, rgb = self.cam.grab()
+        except Exception as e:
+            messagebox.showerror("Grab", str(e)); return
+        from hsv_tuner import HSVTuner
+        HSVTuner(self.root, np.ascontiguousarray(rgb[:, :, ::-1]))
+        if run:
+            self.running = True; self._tick()
+
     # ---------- stream ----------
     def toggle(self):
         if self.cam.h is None:
@@ -136,6 +171,7 @@ class StreamApp:
     def _tick(self):
         if not self.running or self.cam.h is None:
             return
+        t0 = time.time()
         try:
             gray, rgb = self.cam.grab()
         except Exception:
@@ -143,24 +179,23 @@ class StreamApp:
 
         self.frame_i += 1
         H, W = gray.shape
-        bb = board_bbox(np.ascontiguousarray(rgb[:, :, ::-1]), margin=15) if self.use_auto_roi.get() else None
+        bb = (board_bbox(np.ascontiguousarray(rgb[:, :, ::-1]), margin=45)
+              if self.use_auto_roi.get() else None)
         present = False
         if bb is not None:
             present = (bb[2] * bb[3]) > PRESENT_AREA * (W * H)
         elif not self.use_auto_roi.get():
             present = True   # khong dung auto-roi: luon detect toan khung
 
-        vis = Image.fromarray(rgb).convert("RGB")
-        d = ImageDraw.Draw(vis)
-
+        items = None
+        keep_best = False
         if present and (self.frame_i % DETECT_EVERY == 0):
             res = self._detect(gray, bb)
-            res["rgb"] = rgb
-            self._draw(d, res, bb)
+            items = res["items"]
             self._update_table(res)
-            # giu frame "day du nhat" (tong found lon nhat)
             if self.best_board is None or res["total_found"] > self.best_board["total_found"]:
                 self.best_board = res
+                keep_best = True
             self.state = "PRESENT"
             self.absent = 0
         else:
@@ -168,12 +203,15 @@ class StreamApp:
                 self.absent += 1
                 if self.absent >= ABSENT_FRAMES:
                     self._commit()        # board da roi khoi khung -> chot ket qua
-        if bb is not None:
-            x, y, w, h = bb
-            d.rectangle((x, y, x + w, y + h), outline=(0, 229, 255), width=3)
 
-        self._show(vis)
-        self.root.after(1, self._tick)
+        small = self._render(rgb, items, bb)   # render 1 lan/frame (anh nho, cv2)
+        if keep_best:
+            self.best_board["vis_small"] = small
+        dt = time.time() - t0
+        self._fps = 0.9 * getattr(self, "_fps", 0.0) + 0.1 * (1.0 / dt if dt > 0 else 0)
+        base = self.status.cget("text").split("  |FPS")[0]
+        self.status.config(text=f"{base}  |FPS {self._fps:.1f}")
+        self.root.after(LOOP_MS, self._tick)
 
     def _detect(self, gray, bb):
         if bb is not None:
@@ -194,11 +232,27 @@ class StreamApp:
         return {"counts": counts, "expected": expected, "items": items,
                 "ok": ok_all, "total_found": sum(counts.values())}
 
-    def _draw(self, d, res, bb):
-        for name, score, corners, center in res["items"]:
-            d.line([corners[0], corners[1], corners[2], corners[3], corners[0]],
-                   fill=(255, 0, 0), width=4)
-            d.text((center[0] + 6, center[1] - 6), f"{name} {score:.2f}", fill=(255, 255, 0))
+    def _render(self, rgb, items, bb):
+        """Resize bang cv2 + ve overlay tren anh NHO. Tra ve anh nho (RGB) da ve."""
+        h, w = rgb.shape[:2]
+        s = min(DISP_W / w, 1.0)
+        disp = np.ascontiguousarray(cv2.resize(rgb, (int(w * s), int(h * s)),
+                                               interpolation=cv2.INTER_AREA))
+        if items:
+            for name, score, corners, center in items:
+                pts = np.array([[int(px * s), int(py * s)] for px, py in corners], np.int32)
+                cv2.polylines(disp, [pts], True, (255, 0, 0), 2)
+                cv2.putText(disp, f"{name} {score:.2f}",
+                            (int(center[0] * s) + 4, int(center[1] * s) - 4),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+        if bb is not None:
+            x, y, ww, hh = [int(v * s) for v in bb]
+            cv2.rectangle(disp, (x, y), (x + ww, y + hh), (0, 229, 255), 2)
+        self.tkimg = ImageTk.PhotoImage(Image.fromarray(disp))
+        self.canvas.config(width=disp.shape[1], height=disp.shape[0])
+        self.canvas.delete("all")
+        self.canvas.create_image(0, 0, anchor="nw", image=self.tkimg)
+        return disp
 
     def _update_table(self, res):
         for i in self.tree.get_children():
@@ -228,23 +282,9 @@ class StreamApp:
         ts = dt.datetime.now()
         with open(LOG_CSV, "a", newline="", encoding="utf-8") as f:
             csv.writer(f).writerow([ts.isoformat(timespec="seconds"), verdict, detail])
-        if not res["ok"] and res.get("rgb") is not None:
-            # luu anh board FAIL (kem khung) de truy vet
-            vis = Image.fromarray(res["rgb"]).convert("RGB")
-            dd = ImageDraw.Draw(vis)
-            self._draw(dd, res, None)
+        if not res["ok"] and res.get("vis_small") is not None:
             fn = os.path.join(FAIL_DIR, ts.strftime("fail_%Y%m%d_%H%M%S_%f.jpg"))
-            vis.save(fn)
-
-    def _show(self, pil_img):
-        w, h = pil_img.size
-        s = min(MAX_VIEW[0] / w, MAX_VIEW[1] / h, 1.0)
-        self._disp_scale = s
-        disp = pil_img.resize((int(w * s), int(h * s)))
-        self.tkimg = ImageTk.PhotoImage(disp)
-        self.canvas.config(width=disp.width, height=disp.height)
-        self.canvas.delete("all")
-        self.canvas.create_image(0, 0, anchor="nw", image=self.tkimg)
+            Image.fromarray(res["vis_small"]).save(fn)
 
     def on_close(self):
         self.running = False
