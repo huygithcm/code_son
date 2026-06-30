@@ -32,3 +32,20 @@ mindvision_python/run.log
 # OS
 Thumbs.db
 .DS_Store
+
+# yolo_board generated / heavy data
+yolo_board/dataset/
+yolo_board/pred_out/
+yolo_board/runs/
+yolo_board/__pycache__/
+
+# yolo_board training artifacts (regenerable tu train)
+yolo_board/*.png
+yolo_board/*.jpg
+yolo_board/*curve*.png
+yolo_board/confusion_matrix*.png
+yolo_board/events.out.tfevents*
+yolo_board/args.yaml
+yolo_board/results.csv
+yolo_board/labels*.jpg
+yolo_board/weights/last.pt
