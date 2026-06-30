@@ -1,0 +1,19 @@
+# Thu vien cho nhanh yolo-plc (YOLO detect linh kien + PLC GUI)
+# Cai vao venv:  python -m pip install -r requirements.txt
+
+# --- Vision / YOLO ---
+ultralytics==8.4.83          # YOLO11 (train + detect)
+torch==2.12.1                # backend (CPU; doi sang ban CUDA neu co GPU)
+torchvision==0.27.1
+opencv-python-headless==4.13.0.92   # xu ly anh (ban headless: GUI dung tkinter)
+numpy==2.5.0
+pillow==12.2.0               # hien thi anh tren tkinter (ImageTk)
+
+# --- PLC Siemens S7 ---
+python-snap7==3.0.0          # ket noi PLC S7-1200/1500 (kem snap7.dll cho Windows)
+
+# --- Ghi chu ---
+# - SDK camera MindVision (mvsdk) nam trong mindvision_python/mvsdk.py (khong qua pip),
+#   can driver/DLL MindVision cai san tren may.
+# - tkinter di kem Python tren Windows (khong cai qua pip).
+# - Co GPU NVIDIA: cai torch ban CUDA tu https://pytorch.org thay cho dong torch o tren.
