@@ -33,6 +33,9 @@ mindvision_python/run.log
 Thumbs.db
 .DS_Store
 
+# Anh test (khong dua vao repo)
+test_image/
+
 # yolo_board generated / heavy data
 yolo_board/dataset/
 yolo_board/pred_out/
