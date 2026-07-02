@@ -1,0 +1,156 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Trang-1" id="LuuDoXuLyAnh0001">
+    <mxGraphModel dx="1178" dy="648" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="ld-title" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" value="&lt;b&gt;LƯU ĐỒ GIẢI THUẬT XỬ LÝ ẢNH&lt;/b&gt;" vertex="1">
+          <mxGeometry height="40" width="220" x="50" y="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-start" parent="1" style="rounded=1;arcSize=50;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" value="BẮT ĐẦU" vertex="1">
+          <mxGeometry height="40" width="120" x="350" y="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-grab" parent="1" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fontFamily=Times New Roman;" value="NHẬN ẢNH TỪ CAMERA" vertex="1">
+          <mxGeometry height="60" width="160" x="330" y="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-qroi" parent="1" style="rhombus;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" value="CÓ CHỌN ROI?" vertex="1">
+          <mxGeometry height="80" width="140" x="340" y="260" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-crop" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" value="CẮT ẢNH THEO ROI" vertex="1">
+          <mxGeometry height="60" width="120" x="560" y="270" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-resize" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" value="RESIZE ẢNH VỀ KÍCH THƯỚC IMGSZ" vertex="1">
+          <mxGeometry height="60" width="120" x="350" y="390" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-yolo" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" value="YOLO PHÁT HIỆN LINH KIỆN (best.pt)" vertex="1">
+          <mxGeometry height="60" width="120" x="350" y="490" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-filter" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" value="LỌC BOX THEO NGƯỠNG SCORE" vertex="1">
+          <mxGeometry height="60" width="120" x="350" y="590" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-count" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" value="ĐẾM SỐ LƯỢNG TỪNG LOẠI LINH KIỆN" vertex="1">
+          <mxGeometry height="60" width="120" x="350" y="690" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-qok" parent="1" style="rhombus;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=11;" value="SỐ LƯỢNG ĐÚNG YÊU CẦU?" vertex="1">
+          <mxGeometry height="90" width="150" x="335" y="790" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-pass" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" value="KẾT QUẢ PASS (OK)" vertex="1">
+          <mxGeometry height="60" width="120" x="560" y="805" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-fail" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" value="KẾT QUẢ FAIL (NG)" vertex="1">
+          <mxGeometry height="60" width="120" x="140" y="805" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-show" parent="1" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fontFamily=Times New Roman;" value="HIỂN THỊ KẾT QUẢ LÊN GIAO DIỆN, LƯU KẾT QUẢ" vertex="1">
+          <mxGeometry height="60" width="160" x="330" y="920" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-qsensor" parent="1" style="rhombus;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=11;" value="BOARD ĐÃ ĐI QUA CẢM BIẾN S2?" vertex="1">
+          <mxGeometry height="90" width="150" x="335" y="1010" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-plc" parent="1" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fontFamily=Times New Roman;" value="GỬI KẾT QUẢ XUỐNG PLC (TCP/IP)" vertex="1">
+          <mxGeometry height="60" width="160" x="330" y="1130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-qfail" parent="1" style="rhombus;whiteSpace=wrap;html=1;fontFamily=Times New Roman;fontSize=11;" value="KẾT QUẢ FAIL?" vertex="1">
+          <mxGeometry height="80" width="140" x="340" y="1220" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-reject" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" value="ĐẨY XI LANH LOẠI BOARD LỖI" vertex="1">
+          <mxGeometry height="60" width="120" x="140" y="1230" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-pastru" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" value="CHO BOARD ĐI QUA" vertex="1">
+          <mxGeometry height="60" width="120" x="560" y="1230" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-end" parent="1" style="rounded=1;arcSize=50;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" value="KẾT THÚC" vertex="1">
+          <mxGeometry height="40" width="120" x="350" y="1360" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ld-e1" edge="1" parent="1" source="ld-start" target="ld-grab" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Times New Roman;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e2" edge="1" parent="1" source="ld-grab" target="ld-qroi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Times New Roman;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e3" edge="1" parent="1" source="ld-qroi" target="ld-crop" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Times New Roman;" value="CÓ">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e4" edge="1" parent="1" source="ld-qroi" target="ld-resize" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Times New Roman;" value="KHÔNG">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e5" edge="1" parent="1" source="ld-crop" target="ld-resize" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Times New Roman;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e6" edge="1" parent="1" source="ld-resize" target="ld-yolo" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Times New Roman;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e7" edge="1" parent="1" source="ld-yolo" target="ld-filter" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Times New Roman;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e8" edge="1" parent="1" source="ld-filter" target="ld-count" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Times New Roman;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e9" edge="1" parent="1" source="ld-count" target="ld-qok" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Times New Roman;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e10" edge="1" parent="1" source="ld-qok" target="ld-pass" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Times New Roman;" value="ĐÚNG">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e11" edge="1" parent="1" source="ld-qok" target="ld-fail" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Times New Roman;" value="SAI">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e12" edge="1" parent="1" source="ld-pass" target="ld-show" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Times New Roman;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e13" edge="1" parent="1" source="ld-fail" target="ld-show" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Times New Roman;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e14" edge="1" parent="1" source="ld-show" target="ld-qsensor" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Times New Roman;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e15" edge="1" parent="1" source="ld-qsensor" target="ld-qsensor" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.25;entryDx=0;entryDy=0;fontFamily=Times New Roman;" value="CHƯA (ĐỢI)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="540" y="1055" />
+              <mxPoint x="540" y="1032" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ld-e16" edge="1" parent="1" source="ld-qsensor" target="ld-plc" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Times New Roman;" value="RỒI">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e17" edge="1" parent="1" source="ld-plc" target="ld-qfail" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Times New Roman;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e18" edge="1" parent="1" source="ld-qfail" target="ld-reject" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Times New Roman;" value="ĐÚNG (NG)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e19" edge="1" parent="1" source="ld-qfail" target="ld-pastru" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Times New Roman;" value="SAI (OK)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e20" edge="1" parent="1" source="ld-reject" target="ld-end" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Times New Roman;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ld-e21" edge="1" parent="1" source="ld-pastru" target="ld-end" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Times New Roman;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

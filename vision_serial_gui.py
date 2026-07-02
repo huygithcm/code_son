@@ -55,6 +55,10 @@ MAU_OK = "#1a7f1a"
 MAU_NG = "#c00000"
 MAU_PLC = "#0000c0"
 
+# Thong tin tac gia (sua o day)
+TAC_GIA = "Nguyễn Văn Sơn"
+MSSV = "42001245"
+
 
 # ----------------------------------------------------------------------
 # Thread chay YOLO (khong block giao dien)
@@ -238,6 +242,15 @@ class VisionSerialWindow(QMainWindow):
         root = QVBoxLayout(central)
         root.setContentsMargins(8, 8, 8, 4)
 
+        # ===== Banner tac gia (noi bat tren cung) =====
+        banner = QLabel(f"Sinh Viên:  {TAC_GIA}        MSSV:  {MSSV}")
+        banner.setAlignment(Qt.AlignCenter)
+        banner.setFont(QFont("Segoe UI", 15, QFont.Black))
+        banner.setStyleSheet(
+            "color: white; background: #0d47a1; border: 2px solid #08306b;"
+            " border-radius: 6px; padding: 8px;")
+        root.addWidget(banner)
+
         body = QHBoxLayout()
         root.addLayout(body, 1)
 
@@ -269,6 +282,16 @@ class VisionSerialWindow(QMainWindow):
         btn_xoa_roi = QPushButton("Xóa ROI")
         btn_xoa_roi.clicked.connect(self.xoa_roi)
         thanh_cc.addWidget(btn_xoa_roi)
+
+        # chon imgsz (resize dua vao YOLO): ROI + imgsz nho = nhanh hon
+        thanh_cc.addWidget(QLabel("imgsz:"))
+        self.cbo_imgsz = QComboBox()
+        self.cbo_imgsz.addItems(["320", "416", "512", "640", "960"])
+        self.cbo_imgsz.setCurrentText("640")
+        self.cbo_imgsz.setToolTip("Kich thuoc resize dua vao YOLO. ROI + imgsz nho (320/416) chay nhanh hon.")
+        self.cbo_imgsz.currentTextChanged.connect(self._doi_imgsz)
+        thanh_cc.addWidget(self.cbo_imgsz)
+
         thanh_cc.addStretch(1)
         lay_anh.addLayout(thanh_cc)
 
@@ -569,6 +592,14 @@ class VisionSerialWindow(QMainWindow):
         self.roi = None
         self.ghi_log("VISION", "Đã xóa ROI", MAU_PLC)
         self._ve_hien_thi()
+
+    def _doi_imgsz(self, txt):
+        """Doi kich thuoc resize dua vao YOLO (dc.detect imgsz)."""
+        try:
+            self.worker.imgsz = int(txt)
+            self.ghi_log("VISION", f"imgsz = {txt}", MAU_PLC)
+        except ValueError:
+            pass
 
     def auto_roi_hsv(self):
         """Tu dong dat ROI quanh board bang nguong HSV (segment_board)."""
