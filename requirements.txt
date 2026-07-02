@@ -9,6 +9,9 @@ opencv-python-headless==4.13.0.92   # xu ly anh (ban headless: GUI dung tkinter)
 numpy==2.5.0
 pillow==12.2.0               # hien thi anh tren tkinter (ImageTk)
 
+# --- Giao dien GUI ---
+PyQt5>=5.15                  # GUI vision_serial_gui.py (camera + YOLO + PLC)
+
 # --- PLC Siemens S7 ---
 python-snap7==3.0.0          # ket noi PLC S7-1200/1500 (kem snap7.dll cho Windows)
 
