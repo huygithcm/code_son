@@ -38,6 +38,7 @@ yolo_board/dataset/
 yolo_board/pred_out/
 yolo_board/runs/
 yolo_board/__pycache__/
+yolo_board/log_ket_qua/
 
 # yolo_board training artifacts (regenerable tu train)
 yolo_board/*.png
