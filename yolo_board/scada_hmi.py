@@ -105,7 +105,7 @@ class Den(QWidget):
 
     def _dat_mau(self, mau):
         self.cham.setStyleSheet(
-            f"background: {mau}; border-radius: 7px; border: 1px solid #0006;")
+            f"background: {mau}; border-radius: 7px; border: 1px solid rgba(0,0,0,0.35);")
 
     def set(self, on, mau_on=XANH):
         self._dat_mau(mau_on if on else XAM)
