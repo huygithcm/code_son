@@ -115,6 +115,7 @@ class PlcWorker(QThread):
     yeu_cau_chup = pyqtSignal()             # TRIGGER len 1
     trang_thai = pyqtSignal(dict)           # toan bo DB1 da giai ma
     bao_loi = pyqtSignal(str)
+    thong_bao = pyqtSignal(str)             # log thao tac test phan cung
     ket_noi_doi = pyqtSignal(bool)
 
     def __init__(self, parent=None):
@@ -128,6 +129,7 @@ class PlcWorker(QThread):
         self._yeu_cau_ket_noi = False
         self._yeu_cau_ngat = False
         self._ket_qua_cho = None            # (ok, so_loi, ma_loi)
+        self._lenh_ngo_ra = []              # hang doi lenh test phan cung (ghi Q)
         self._da_gui = False                # da ghi DONE cho phoi hien tai
         self._trigger_truoc = False
         self._alive = False
@@ -155,6 +157,18 @@ class PlcWorker(QThread):
     def kich_trigger_mo_phong(self):
         self._mutex.lock()
         self._mp_trigger = True
+        self._mutex.unlock()
+
+    def dat_ngo_ra(self, byte, bit, value):
+        """Test phan cung: dat mot bit ngo ra Q<byte>.<bit> (ON/OFF)."""
+        self._mutex.lock()
+        self._lenh_ngo_ra.append(("bit", int(byte), int(bit), bool(value)))
+        self._mutex.unlock()
+
+    def tat_het_ngo_ra(self, nbytes=8):
+        """Test phan cung: tat toan bo Q0..Q(nbytes-1) — dung khi can dung khan."""
+        self._mutex.lock()
+        self._lenh_ngo_ra.append(("alloff", int(nbytes)))
         self._mutex.unlock()
 
     def dung(self):
@@ -231,6 +245,38 @@ class PlcWorker(QThread):
         self.client.db_write(DB_SO, W_SO_LOI, bytearray(struct.pack(">h", so_loi)))
         self.client.db_write(DB_SO, W_MA_LOI, bytearray(struct.pack(">h", ma_loi)))
 
+    def _xu_ly_lenh_ngo_ra(self):
+        """Thuc thi hang doi lenh test phan cung — ghi THANG vung Q (Area.PA).
+        CANH BAO: kich thiet bi that. O mo phong chi ghi log, khong dung PLC.
+        Neu CPU dang RUN va ladder cung ghi cac Q nay, ladder se ghi de moi vong
+        quet -> nen chuyen CPU sang STOP hoac ngat khi nen khi test."""
+        self._mutex.lock()
+        ds = self._lenh_ngo_ra
+        self._lenh_ngo_ra = []
+        self._mutex.unlock()
+        for l in ds:
+            try:
+                if l[0] == "bit":
+                    _, byte, bit, value = l
+                    if self.mo_phong:
+                        self.thong_bao.emit(
+                            f"[mô phỏng] Q{byte}.{bit} = {'ON' if value else 'OFF'}")
+                    else:
+                        d = self.client.read_area(Area.PA, 0, byte, 1)
+                        snap7.util.set_bool(d, 0, bit, value)
+                        self.client.write_area(Area.PA, 0, byte, d)
+                        self.thong_bao.emit(f"Q{byte}.{bit} = {'ON' if value else 'OFF'}")
+                elif l[0] == "alloff":
+                    _, nbytes = l
+                    if self.mo_phong:
+                        self.thong_bao.emit("[mô phỏng] TẮT TẤT CẢ ngõ ra Q")
+                    else:
+                        for b in range(nbytes):
+                            self.client.write_area(Area.PA, 0, b, bytearray([0]))
+                        self.thong_bao.emit("Đã TẮT TẤT CẢ ngõ ra Q")
+            except Exception as e:
+                self.thong_bao.emit(f"Lỗi ghi ngõ ra: {e}")
+
     # ---------- vong lap chinh ----------
     def run(self):
         self._done = self._pass = self._fail = False
@@ -254,6 +300,7 @@ class PlcWorker(QThread):
                 continue
 
             try:
+                self._xu_ly_lenh_ngo_ra()       # test phan cung thu cong (neu co)
                 self._mot_vong()
             except Exception as e:
                 self.bao_loi.emit(f"Lỗi PLC: {e}")
@@ -354,6 +401,19 @@ class PlcWorker(QThread):
 
         self._trigger_truoc = trigger
 
+        # Doc them byte ngo ra Q va ngo vao I de HMI ve trang thai phan cung that.
+        # Neu PLC khong cho doc (hoac mo phong) -> None, ben HMI se suy tu trang thai.
+        ngo_ra = ngo_vao = None
+        if not self.mo_phong:
+            try:
+                ngo_ra = self.client.read_area(Area.PA, 0, 0, 1)[0]
+            except Exception:
+                ngo_ra = None
+            try:
+                ngo_vao = self.client.read_area(Area.PE, 0, 0, 1)[0]
+            except Exception:
+                ngo_vao = None
+
         self.trang_thai.emit({
             "trigger": trigger,
             "may_chay": _lay_bit(d, *BIT_MAY_CHAY),
@@ -363,6 +423,8 @@ class PlcWorker(QThread):
             "dem_pass": struct.unpack_from(">h", d, W_DEM_PASS)[0],
             "dem_fail": struct.unpack_from(">h", d, W_DEM_FAIL)[0],
             "trang_thai_may": struct.unpack_from(">h", d, W_TRANG_THAI)[0],
+            "ngo_ra": ngo_ra,
+            "ngo_vao": ngo_vao,
         })
 
     def dat_san_sang(self, v):
@@ -464,6 +526,8 @@ class VisionPlcWindow(QMainWindow):
         self.dang_xu_ly = False
         self.giu_ket_qua = 0.0          # thoi diem het giu anh ket qua
         self.thu_muc_log = os.path.join(HERE, "log_ket_qua")
+        self.plc_da_ket_noi = False     # theo doi o luong GUI (khong cham client)
+        self.plc_mo_phong = False
 
         self._dung_giao_dien()
 
@@ -477,6 +541,7 @@ class VisionPlcWindow(QMainWindow):
         self.plc.yeu_cau_chup.connect(self._plc_yeu_cau_chup)
         self.plc.trang_thai.connect(self._cap_nhat_trang_thai)
         self.plc.bao_loi.connect(self._ghi_log)
+        self.plc.thong_bao.connect(self._ghi_log)
         self.plc.ket_noi_doi.connect(self._plc_ket_noi_doi)
         self.plc.start()
 
@@ -522,6 +587,7 @@ class VisionPlcWindow(QMainWindow):
         # ---------- phai: dieu khien ----------
         phai = QVBoxLayout()
         phai.addWidget(self._nhom_plc())
+        phai.addWidget(self._nhom_test_phan_cung())
         phai.addWidget(self._nhom_camera())
         phai.addWidget(self._nhom_yolo())
         phai.addWidget(self._nhom_chup())
@@ -572,6 +638,74 @@ class VisionPlcWindow(QMainWindow):
         self.btn_gia_lap = QPushButton("Giả lập TRIGGER (chỉ khi mô phỏng)")
         self.btn_gia_lap.clicked.connect(lambda: self.plc.kich_trigger_mo_phong())
         lo.addWidget(self.btn_gia_lap, 5, 0, 1, 3)
+        return g
+
+    def _nhom_test_phan_cung(self):
+        """Bang test phan cung thu cong: ghi thang ngo ra Q de kiem tra co cau."""
+        g = QGroupBox("Test phần cứng thủ công (ghi ngõ ra Q)")
+        lo = QGridLayout(g)
+
+        self.chk_cho_phep_test = QCheckBox("Cho phép điều khiển (⚠ kích thiết bị thật)")
+        self.chk_cho_phep_test.toggled.connect(self._doi_cho_phep_test)
+        lo.addWidget(self.chk_cho_phep_test, 0, 0, 1, 3)
+
+        lo.addWidget(QLabel("Xung (s):"), 1, 0)
+        self.sp_xung = QDoubleSpinBox()
+        self.sp_xung.setRange(0.1, 5.0)
+        self.sp_xung.setSingleStep(0.1)
+        self.sp_xung.setValue(1.0)
+        self.sp_xung.setToolTip("Thời gian giữ ON khi bấm nút 'xung' (xy lanh/còi)")
+        lo.addWidget(self.sp_xung, 1, 1)
+        self.btn_tat_het = QPushButton("TẮT TẤT CẢ")
+        self.btn_tat_het.setStyleSheet(
+            "QPushButton { background: #c00000; color: white; font-weight: bold; padding: 4px; }")
+        self.btn_tat_het.clicked.connect(self._tat_het_ngo_ra)
+        lo.addWidget(self.btn_tat_het, 1, 2)
+
+        self._nut_test = []             # bat/tat enable theo checkbox cho phep
+
+        # Bang chuyen Q0.5 — START / STOP
+        lo.addWidget(QLabel("Băng chuyền (Q0.5):"), 2, 0)
+        b_run = QPushButton("▶ Chạy")
+        b_run.setStyleSheet(f"QPushButton {{ color: {MAU_OK}; font-weight: bold; }}")
+        b_run.clicked.connect(lambda: self._bat_ngo_ra(0, 5, True))
+        b_stop = QPushButton("■ Dừng")
+        b_stop.setStyleSheet(f"QPushButton {{ color: {MAU_NG}; font-weight: bold; }}")
+        b_stop.clicked.connect(lambda: self._bat_ngo_ra(0, 5, False))
+        lo.addWidget(b_run, 2, 1)
+        lo.addWidget(b_stop, 2, 2)
+        self._nut_test += [b_run, b_stop]
+
+        # Xy lanh — xung
+        lo.addWidget(QLabel("Xy lanh 1 đẩy (Q0.4):"), 3, 0)
+        b_xl1 = QPushButton("Đẩy (xung)")
+        b_xl1.clicked.connect(lambda: self._xung_ngo_ra(0, 4))
+        lo.addWidget(b_xl1, 3, 1, 1, 2)
+        lo.addWidget(QLabel("Xy lanh 2 loại (Q0.6):"), 4, 0)
+        b_xl2 = QPushButton("Đẩy (xung)")
+        b_xl2.clicked.connect(lambda: self._xung_ngo_ra(0, 6))
+        lo.addWidget(b_xl2, 4, 1, 1, 2)
+        self._nut_test += [b_xl1, b_xl2]
+
+        # Den — nut giu trang thai (checkable)
+        lo.addWidget(QLabel("Đèn (giữ):"), 5, 0)
+        h_den = QHBoxLayout()
+        for ten, bit in (("Xanh", 0), ("Vàng", 1), ("Đỏ", 2)):
+            b = QPushButton(ten)
+            b.setCheckable(True)
+            b.toggled.connect(lambda on, bi=bit: self._bat_ngo_ra(0, bi, on))
+            h_den.addWidget(b)
+            self._nut_test.append(b)
+        lo.addLayout(h_den, 5, 1, 1, 2)
+
+        # Coi — xung
+        lo.addWidget(QLabel("Còi (Q0.3):"), 6, 0)
+        b_coi = QPushButton("Kêu (xung)")
+        b_coi.clicked.connect(lambda: self._xung_ngo_ra(0, 3))
+        lo.addWidget(b_coi, 6, 1, 1, 2)
+        self._nut_test.append(b_coi)
+
+        self._cap_nhat_enable_test()
         return g
 
     def _nhom_camera(self):
@@ -707,6 +841,8 @@ class VisionPlcWindow(QMainWindow):
         self.btn_plc_kn.setEnabled(not ok)
         self.btn_plc_ngat.setEnabled(ok)
         self.chk_mo_phong.setEnabled(not ok)
+        self.plc_da_ket_noi = ok
+        self.plc_mo_phong = self.plc.mo_phong
         if ok:
             mp = " (mô phỏng)" if self.plc.mo_phong else ""
             self.lbl_plc.setText(f"Đã kết nối{mp}")
@@ -715,6 +851,49 @@ class VisionPlcWindow(QMainWindow):
         else:
             self.lbl_plc.setText("Chưa kết nối")
             self.lbl_plc.setStyleSheet(f"color: {MAU_NG}; font-weight: bold;")
+        self._cap_nhat_enable_test()
+
+    # ------------------------------------------------------------------
+    # Test phan cung thu cong (ghi ngo ra Q)
+    # ------------------------------------------------------------------
+    def _cap_nhat_enable_test(self):
+        """Chi cho bam nut test khi da tick 'cho phep' VA da ket noi PLC."""
+        cho_phep = self.chk_cho_phep_test.isChecked() and self.plc_da_ket_noi
+        for b in self._nut_test:
+            b.setEnabled(cho_phep)
+        self.btn_tat_het.setEnabled(self.plc_da_ket_noi)
+
+    def _doi_cho_phep_test(self, on):
+        # Bat che do dieu khien voi PLC that -> hoi xac nhan an toan
+        if on and self.plc_da_ket_noi and not self.plc_mo_phong:
+            tra_loi = QMessageBox.warning(
+                self, "Cảnh báo an toàn",
+                "Test phần cứng sẽ GHI THẲNG ngõ ra và KÍCH THIẾT BỊ THẬT "
+                "(van khí, xy lanh, băng chuyền, đèn/còi).\n\n"
+                "Đảm bảo KHÔNG có người trong vùng máy. Nên ngắt khí nén hoặc "
+                "để CPU ở STOP khi chỉ muốn kiểm tra địa chỉ.\n\nTiếp tục?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if tra_loi != QMessageBox.Yes:
+                self.chk_cho_phep_test.setChecked(False)
+                return
+        self._cap_nhat_enable_test()
+
+    def _bat_ngo_ra(self, byte, bit, value):
+        self.plc.dat_ngo_ra(byte, bit, value)
+
+    def _xung_ngo_ra(self, byte, bit):
+        """Bat ngo ra roi tu tat sau 'Xung (s)' — an toan cho xy lanh/coi."""
+        dur_ms = int(self.sp_xung.value() * 1000)
+        self.plc.dat_ngo_ra(byte, bit, True)
+        QTimer.singleShot(dur_ms, lambda: self.plc.dat_ngo_ra(byte, bit, False))
+
+    def _tat_het_ngo_ra(self):
+        self.plc.tat_het_ngo_ra(8)
+        for b in self._nut_test:                # nha cac nut den dang giu
+            if b.isCheckable():
+                b.blockSignals(True)
+                b.setChecked(False)
+                b.blockSignals(False)
 
     def _cap_nhat_trang_thai(self, tt):
         s = tt["trang_thai_may"]
