@@ -18,7 +18,7 @@ Chay:
 """
 import os
 import sys
-import time
+import math
 from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -190,17 +190,62 @@ class Donut(QWidget):
 # So do quy trinh — ve DONG theo trang thai phan cung
 # ======================================================================
 class SoDoQuyTrinh(QWidget):
+    # toa do logic (1000 x 360)
+    BELT_X0, BELT_X1, BELT_Y = 170, 860, 210
+    SX = {"s1": 340, "s2": 500, "s3": 660}          # vi tri cam bien tren bang
+    X_FEED, X_REJECT, X_OK = 235, 765, 905
+    # vi tri phoi (PCB) muc tieu theo trang thai may
+    WP_TARGET = {1: X_FEED, 2: SX["s1"], 3: SX["s2"], 4: SX["s2"],
+                 5: SX["s2"], 6: X_OK, 7: SX["s3"], 8: X_REJECT}
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(300)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.q = 0                 # byte ngo ra
-        self.i = 0                 # byte ngo vao
+        self.q = 0                 # byte ngo ra Q (thuc te tu PLC)
+        self.i = 0                 # byte ngo vao I (thuc te tu PLC)
         self.state = 0
-        self.pha = 0.0             # pha chay bang chuyen (animation)
+        self.running = False
+        self.estop = False
+        self.plc_on = False
+        self.pha = 0.0             # pha animation (con lan quay + bang chay)
+        self.wp_active = False     # co phoi tren day chuyen khong
+        self.wp_x = self.X_FEED    # vi tri phoi (toa do logic)
+        self.wp_y = self.BELT_Y - 9
+        self.wp_fail = False
 
-    def cap_nhat(self, q, i, state):
+    def cap_nhat(self, q, i, state, running=False, estop=False, plc_on=False):
+        truoc = self.state
         self.q, self.i, self.state = q or 0, i or 0, state
+        self.running, self.estop, self.plc_on = running, estop, plc_on
+        if state in (1, 2, 3, 4, 5, 6, 7, 8):
+            if truoc in (0, 99) or not self.wp_active:    # phoi moi vao day chuyen
+                self.wp_active = True
+                self.wp_x = self.X_FEED
+                self.wp_y = self.BELT_Y - 9
+                self.wp_fail = False
+            if state in (7, 8):        # dang di theo nhanh loai bo
+                self.wp_fail = True
+        else:
+            self.wp_active = False
+        self.update()
+
+    def buoc(self):
+        """Advance animation moi tick (~80 ms): con lan quay, bang chay, phoi di."""
+        bc = _bit(self.q, Q_BANG_CHUYEN)
+        self.pha += 1                           # luon tang: den RUN cua PLC nhay
+        if self.wp_active:
+            tx = self.WP_TARGET.get(self.state, self.wp_x)
+            if self.state == 8:                 # xy lanh 2 day phoi xuong thung NG
+                if self.wp_x < self.X_REJECT - 3:
+                    self.wp_x += 9
+                else:
+                    self.wp_y = min(self.BELT_Y + 70, self.wp_y + 12)
+            elif bc and abs(self.wp_x - tx) > 3:
+                self.wp_x += 9 if tx > self.wp_x else -9
+                self.wp_y = self.BELT_Y - 9
+            if self.state == 6 and self.wp_x >= self.X_OK - 6:
+                self.wp_active = False          # da qua ngo ra OK
         self.update()
 
     # -- tien ich ve --
@@ -217,109 +262,177 @@ class SoDoQuyTrinh(QWidget):
             p.setFont(QFont("Consolas", 8))
             p.drawText(QRectF(x, y + h, w, 14), Qt.AlignCenter, phu)
 
-    def _cam_bien(self, p, x, y, nhan, on):
-        mau = QColor(XANH if on else XAM)
-        p.setBrush(QBrush(mau))
-        p.setPen(QPen(mau.darker(150), 1))
-        p.drawEllipse(QPointF(x, y), 8, 8)
+    def _roller(self, p, cx, cy, r, on):
+        """Con lan: vong tron + 4 nan hoa quay theo pha khi bang chay."""
+        p.setBrush(QColor("#12222f"))
+        p.setPen(QPen(QColor(ACCENT if on else VIEN), 2))
+        p.drawEllipse(QPointF(cx, cy), r, r)
+        ang = math.radians(self.pha * 11) if on else 0
+        p.setPen(QPen(QColor(ACCENT if on else CHU_MO), 2))
+        for k in range(4):
+            a = ang + k * math.pi / 2
+            p.drawLine(QPointF(cx, cy),
+                       QPointF(cx + (r - 4) * math.cos(a), cy + (r - 4) * math.sin(a)))
+
+    def _belt(self, p, on):
+        """Bang tai: 2 ray + chevron chay khi hoat dong."""
+        x0, x1, cy = self.BELT_X0, self.BELT_X1, self.BELT_Y
+        p.setPen(QPen(QColor(ACCENT if on else XAM), 3))
+        p.drawLine(QPointF(x0, cy - 11), QPointF(x1, cy - 11))
+        p.drawLine(QPointF(x0, cy + 11), QPointF(x1, cy + 11))
+        p.setPen(QPen(QColor(XANH if on else "#2b3a49"), 2))
+        off = (self.pha * 6) % 34 if on else 0
+        xx = x0 + 10 + off
+        while xx < x1 - 2:
+            p.drawLine(QPointF(xx - 7, cy - 6), QPointF(xx, cy))
+            p.drawLine(QPointF(xx - 7, cy + 6), QPointF(xx, cy))
+            xx += 34
+
+    def _photo_sensor(self, p, sx, nhan, det):
+        """Cam bien quang thu-phat: dau phat tren, dau thu duoi, tia doc qua bang.
+        det=True (co phoi chan tia) -> tia DO dut net + LED do; nguoc lai tia xanh."""
+        cy = self.BELT_Y
+        mau = DO if det else XANH
+        p.setBrush(QColor(PANEL2))
+        p.setPen(QPen(QColor(mau), 2))
+        p.drawRoundedRect(QRectF(sx - 13, cy - 58, 26, 20), 3, 3)   # dau phat
+        p.drawRoundedRect(QRectF(sx - 13, cy + 30, 26, 14), 3, 3)   # dau thu
+        p.setBrush(QColor(mau))
+        p.setPen(Qt.NoPen)
+        p.drawEllipse(QPointF(sx, cy - 48), 4, 4)                   # LED tren dau phat
+        if det:
+            p.setPen(QPen(QColor(DO), 3, Qt.DashLine))
+        else:
+            p.setPen(QPen(QColor(XANH), 1, Qt.DotLine))
+        p.drawLine(QPointF(sx, cy - 38), QPointF(sx, cy + 30))      # tia
+        p.setPen(QColor(CHU if det else CHU_MO))
+        p.setFont(QFont("Consolas", 8))
+        p.drawText(QRectF(sx - 32, cy + 46, 64, 12), Qt.AlignCenter, nhan)
+
+    def _xy_lanh(self, p, cx, top, mau, on, nhan, addr):
+        """Xy lanh: than + can piston keo dai xuong khi ON (van don, ON=day)."""
+        p.setBrush(QColor(PANEL2))
+        p.setPen(QPen(QColor(mau if on else VIEN), 2))
+        p.drawRoundedRect(QRectF(cx - 22, top, 44, 32), 4, 4)
+        p.setPen(QColor(mau if on else CHU))
+        p.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        p.drawText(QRectF(cx - 22, top, 44, 32), Qt.AlignCenter, nhan)
+        p.setPen(QColor(CHU_MO))
+        p.setFont(QFont("Consolas", 7))
+        p.drawText(QRectF(cx - 24, top - 13, 48, 12), Qt.AlignCenter, addr)
+        rod_top = top + 32
+        rod_len = 46 if on else 14                 # duoi ra khi ON
+        p.setPen(QPen(QColor(mau if on else XAM), 5))
+        p.drawLine(QPointF(cx, rod_top), QPointF(cx, rod_top + rod_len))
+        p.setBrush(QColor(mau if on else XAM))
+        p.setPen(Qt.NoPen)
+        p.drawRect(QRectF(cx - 12, rod_top + rod_len, 24, 6))
+
+    def _workpiece(self, p):
+        """PCB di chuyen tren bang theo trang thai may."""
+        if not self.wp_active:
+            return
+        mau = DO if self.wp_fail else XANH
+        x, y = self.wp_x, self.wp_y
+        p.setBrush(QColor(mau))
+        p.setPen(QPen(QColor(mau).darker(150), 1))
+        p.drawRoundedRect(QRectF(x - 18, y - 9, 36, 18), 3, 3)
+        p.setPen(QColor("#06210f"))
+        p.setFont(QFont("Consolas", 7, QFont.Bold))
+        p.drawText(QRectF(x - 18, y - 9, 36, 18), Qt.AlignCenter, "PCB")
+
+    def _thap_den(self, p, base_x, base_y):
+        for k, (bit, mau) in enumerate(((Q_DEN_XANH, XANH), (Q_DEN_VANG, VANG),
+                                        (Q_DEN_DO, DO))):
+            on = _bit(self.q, bit)
+            p.setBrush(QColor(mau if on else XAM))
+            p.setPen(QPen(QColor(mau).darker(160), 1))
+            p.drawEllipse(QPointF(base_x, base_y + k * 30), 12, 12)
+        coi_on = _bit(self.q, Q_COI)
+        p.setBrush(QColor(VANG if coi_on else XAM))
+        p.setPen(QPen(QColor(VIEN), 1))
+        p.drawRoundedRect(QRectF(base_x - 15, base_y + 3 * 30 - 4, 30, 18), 3, 3)
+        p.setPen(QColor("#000000" if coi_on else CHU_MO))
+        p.setFont(QFont("Consolas", 7, QFont.Bold))
+        p.drawText(QRectF(base_x - 15, base_y + 3 * 30 - 4, 30, 18), Qt.AlignCenter, "CÒI")
+
+    def _plc_box(self, p):
+        """Khoi PLC voi den RUN nhay (dang quet) khi da ket noi."""
+        x, y = 40, 285
+        p.setBrush(QColor(PANEL2))
+        p.setPen(QPen(QColor(ACCENT if self.plc_on else VIEN), 2))
+        p.drawRoundedRect(QRectF(x, y, 122, 52), 5, 5)
+        p.setPen(QColor(CHU))
+        p.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        p.drawText(QRectF(x + 8, y + 5, 106, 14), Qt.AlignLeft | Qt.AlignVCenter,
+                   "PLC S7-1200")
+        run = self.plc_on and (int(self.pha) // 4) % 2 == 0
+        p.setBrush(QColor(XANH if run else XAM))
+        p.setPen(Qt.NoPen)
+        p.drawEllipse(QPointF(x + 15, y + 34), 5, 5)
         p.setPen(QColor(CHU_MO))
         p.setFont(QFont("Consolas", 8))
-        p.drawText(QRectF(x - 20, y + 10, 40, 12), Qt.AlignCenter, nhan)
-
-    def _mui_ten_xuong(self, p, x, y_top, y_bot, on):
-        mau = QColor(VANG if on else XAM)
-        p.setPen(QPen(mau, 3))
-        p.drawLine(QPointF(x, y_top), QPointF(x, y_bot - 6))
-        tam = QPolygonF([QPointF(x - 6, y_bot - 8), QPointF(x + 6, y_bot - 8),
-                         QPointF(x, y_bot)])
-        p.setBrush(QBrush(mau))
-        p.setPen(Qt.NoPen)
-        p.drawPolygon(tam)
+        p.drawText(QRectF(x + 26, y + 27, 90, 14), Qt.AlignLeft | Qt.AlignVCenter,
+                   "RUN · scan" if self.plc_on else "offline")
 
     def paintEvent(self, e):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         W, H = self.width(), self.height()
         p.fillRect(self.rect(), QColor(NEN))
+        p.scale(W / 1000.0, H / 360.0)
 
-        # he toa do logic 1000 x 360 -> scale
-        sx = W / 1000.0
-        sy = H / 360.0
-        p.scale(sx, sy)
+        q, s = self.q, self.state
+        bc = _bit(q, Q_BANG_CHUYEN)
+        cy = self.BELT_Y
 
-        bc_on = _bit(self.q, Q_BANG_CHUYEN)
-        xl1 = _bit(self.q, Q_XYLANH1)
-        xl2 = _bit(self.q, Q_XYLANH2)
-        s = self.state
-
-        belt_y = 210
-        # --- bang chuyen (duong dam) ---
-        p.setPen(QPen(QColor(ACCENT if bc_on else XAM), 10))
-        p.drawLine(QPointF(150, belt_y), QPointF(880, belt_y))
-        # con lan
-        for rx in range(160, 881, 60):
-            p.setBrush(QBrush(QColor("#0b1622")))
-            p.setPen(QPen(QColor(VIEN), 1))
-            p.drawEllipse(QPointF(rx, belt_y), 6, 6)
-        # dau chay tren bang
-        if bc_on:
-            p.setBrush(QBrush(QColor(XANH)))
-            p.setPen(Qt.NoPen)
-            for k in range(6):
-                dx = 160 + ((self.pha * 40 + k * 120) % 720)
-                p.drawEllipse(QPointF(dx, belt_y), 4, 4)
-
-        # --- o phoi (feeder) ---
-        self._hop(p, 30, 150, 90, 110, "Ổ PHÔI", False, phu="")
-        # --- xy lanh 1 (day phoi) ---
-        self._hop(p, 150, 95, 70, 44, "XL ĐẨY", xl1, VANG, "Q0.4")
-        self._mui_ten_xuong(p, 185, 139, belt_y - 12, xl1)
-
-        # --- cam bien S1 ---
-        self._cam_bien(p, 340, belt_y, "S1 I0.4", _bit(self.i, I_S1) or s == 2)
-
-        # --- camera + S2 (vi tri chup) ---
-        chup = (s == 4)
-        self._hop(p, 450, 70, 100, 50, "CAMERA", chup, ACCENT, "chụp @ S2")
-        p.setPen(QPen(QColor(ACCENT if chup else XAM), 2, Qt.DashLine))
-        p.drawLine(QPointF(500, 120), QPointF(500, belt_y - 10))
-        self._cam_bien(p, 500, belt_y, "S2 I0.2", _bit(self.i, I_S2) or chup)
-
-        # --- cam bien S3 ---
-        self._cam_bien(p, 660, belt_y, "S3 I0.3", _bit(self.i, I_S3) or s in (6, 7))
-
-        # --- xy lanh 2 (loai bo) ---
-        self._hop(p, 730, 95, 70, 44, "XL LOẠI", xl2, DO, "Q0.6")
-        self._mui_ten_xuong(p, 765, 139, belt_y - 12, xl2)
-
-        # --- ngo ra OK (cuoi bang) ---
-        self._hop(p, 890, 185, 90, 50, "OK", (s == 6), XANH)
-        # --- thung NG (duoi xy lanh 2) ---
-        self._hop(p, 720, 275, 90, 55, "THÙNG NG", (s == 8), DO)
-        p.setPen(QPen(QColor(DO if xl2 else XAM), 2))
-        p.drawLine(QPointF(765, belt_y + 5), QPointF(765, 275))
-
-        # --- thap den + coi (goc phai tren) ---
-        base_x, base_y = 930, 40
-        for k, (bit, mau) in enumerate(((Q_DEN_XANH, XANH), (Q_DEN_VANG, VANG),
-                                        (Q_DEN_DO, DO))):
-            on = _bit(self.q, bit)
-            p.setBrush(QBrush(QColor(mau if on else XAM)))
-            p.setPen(QPen(QColor(mau).darker(160), 1))
-            p.drawEllipse(QPointF(base_x, base_y + k * 34), 13, 13)
-        coi_on = _bit(self.q, Q_COI)
-        p.setBrush(QBrush(QColor(VANG if coi_on else XAM)))
-        p.setPen(QPen(QColor(VIEN), 1))
-        p.drawRoundedRect(QRectF(base_x - 16, base_y + 3 * 34, 32, 20), 4, 4)
-        p.setPen(QColor("#000" if coi_on else CHU_MO))
-        p.setFont(QFont("Consolas", 7, QFont.Bold))
-        p.drawText(QRectF(base_x - 16, base_y + 3 * 34, 32, 20), Qt.AlignCenter, "CÒI")
-
-        # --- ten trang thai ---
-        p.setPen(QColor(CHU_MO))
-        p.setFont(QFont("Consolas", 9))
-        p.drawText(QRectF(30, 20, 600, 20), Qt.AlignLeft | Qt.AlignVCenter,
+        # ten trang thai
+        p.setPen(QColor(DO if (self.estop or s == 99) else CHU_MO))
+        p.setFont(QFont("Consolas", 9, QFont.Bold))
+        p.drawText(QRectF(40, 16, 620, 18), Qt.AlignLeft | Qt.AlignVCenter,
                    f"S{s} — {TEN_TRANG_THAI.get(s, '?')}")
+
+        # o phoi + bang tai + con lan
+        self._hop(p, 40, 150, 88, 108, "Ổ PHÔI", False)
+        p.setPen(QPen(QColor(VIEN), 2))
+        p.drawLine(QPointF(128, cy), QPointF(self.BELT_X0, cy))   # phoi -> bang
+        self._belt(p, bc)
+        self._roller(p, self.BELT_X0, cy, 18, bc)
+        self._roller(p, self.BELT_X1, cy, 18, bc)
+
+        # noi bang -> OK ; bang -> thung NG
+        p.setPen(QPen(QColor(XANH if s == 6 else VIEN), 2))
+        p.drawLine(QPointF(self.BELT_X1, cy), QPointF(905, 210))
+        p.setPen(QPen(QColor(DO if _bit(q, Q_XYLANH2) else VIEN), 2, Qt.DashLine))
+        p.drawLine(QPointF(self.X_REJECT, cy + 12), QPointF(self.X_REJECT, 285))
+
+        # phoi (ve trươc cam bien de tia chan dung o vi tri phoi)
+        self._workpiece(p)
+
+        # cam bien quang
+        for key, addr, ibit in (("s1", "S1 I0.4", I_S1), ("s2", "S2 I0.2", I_S2),
+                                ("s3", "S3 I0.3", I_S3)):
+            sx = self.SX[key]
+            det = _bit(self.i, ibit) or (self.wp_active and abs(self.wp_x - sx) < 22)
+            self._photo_sensor(p, sx, addr, det)
+
+        # camera tren S2
+        chup = (s == 4)
+        self._hop(p, 448, 24, 104, 44, "CAMERA", chup, ACCENT, "chụp @ S2")
+        p.setPen(QPen(QColor(ACCENT if chup else XAM), 2, Qt.DashLine))
+        p.drawLine(QPointF(self.SX["s2"], 68), QPointF(self.SX["s2"], cy - 58))
+
+        # xy lanh
+        self._xy_lanh(p, self.X_FEED, 96, VANG, _bit(q, Q_XYLANH1), "XL ĐẨY", "Q0.4")
+        self._xy_lanh(p, self.X_REJECT, 96, DO, _bit(q, Q_XYLANH2), "XL LOẠI", "Q0.6")
+
+        # ngo ra OK / thung NG
+        self._hop(p, 905, 188, 80, 46, "OK", (s == 6), XANH)
+        self._hop(p, 715, 285, 100, 52, "THÙNG NG", (s == 8), DO)
+
+        # thap den + coi, khoi PLC
+        self._thap_den(p, 958, 34)
+        self._plc_box(p)
         p.end()
 
 
@@ -656,7 +769,8 @@ class ScadaHmiWindow(QMainWindow):
             q = q_tu_trang_thai(s, tt["estop"])
         if i is None:
             i = 0
-        self.so_do.cap_nhat(q, i, s)
+        self.so_do.cap_nhat(q, i, s, running=tt["may_chay"], estop=tt["estop"],
+                            plc_on=self.plc_da_ket_noi)
 
         # tile
         mau_tt = DO if (tt["may_loi"] or tt["estop"] or s == 99) else (
@@ -710,9 +824,7 @@ class ScadaHmiWindow(QMainWindow):
                 f" border-radius: 6px; padding: 6px;")
 
     def _anim_tick(self):
-        if _bit(self.so_do.q, Q_BANG_CHUYEN):
-            self.so_do.pha += 1
-            self.so_do.update()
+        self.so_do.buoc()               # con lan quay, bang chay, phoi di chuyen
         self.lbl_gio.setText(datetime.now().strftime("%H:%M:%S"))
 
     # ------------------------------------------------------------------
